@@ -124,14 +124,28 @@ setupkvm(void)
   if((pgdir = (pde_t*)kalloc()) == 0)
     return 0;
   memset(pgdir, 0, PGSIZE);
-  if (P2V(PHYSTOP) > (void*)DEVSPACE)
-    panic("PHYSTOP too high");
-  for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
-    if(mappages(pgdir, k->virt, k->phys_end - k->phys_start,
-                (uint)k->phys_start, k->perm) < 0) {
-      freevm(pgdir);
-      return 0;
+  /* if the kpgdir has been initialized previously by kvmalloc, then
+   * we can just reuse it for the new processes page tables (pgdir).
+   * That's how we are going to share the
+   * same kernel mapping accross all processes.
+   */
+  if(kpgdir) {
+    for(int i=PDX(KERNBASE); i<NPDENTRIES; i++) {
+      if(kpgdir[i] & PTE_P) //checking if there is a PTE
+        pgdir[i] = kpgdir[i];
     }
+  }
+  else {
+    if (P2V(PHYSTOP) > (void*)DEVSPACE)
+      panic("PHYSTOP too high");
+    for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
+      if(mappages(pgdir, k->virt, k->phys_end - k->phys_start,
+                  (uint)k->phys_start, k->perm) < 0) {
+        freevm(pgdir);
+        return 0;
+      }
+
+  }
   return pgdir;
 }
 
